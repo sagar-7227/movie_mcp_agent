@@ -1,3 +1,4 @@
+
 import os
 
 from dotenv import load_dotenv
@@ -6,9 +7,9 @@ from google import genai
 
 load_dotenv()
 
-# ==========================
+# ==========================================================
 # MongoDB
-# ==========================
+# ==========================================================
 
 mongo_client = MongoClient(
     os.getenv("MDB_MCP_CONNECTION_STRING")
@@ -18,17 +19,19 @@ db = mongo_client["sample_mflix"]
 
 embedded_movies = db["embedded_movies"]
 
-# ==========================
+preferences_collection = db["user_preferences"]
+
+# ==========================================================
 # Gemini
-# ==========================
+# ==========================================================
 
 genai_client = genai.Client(
     api_key=os.getenv("GOOGLE_API_KEY")
 )
 
-# ==========================
+# ==========================================================
 # Embedding Generator
-# ==========================
+# ==========================================================
 
 def generate_embedding(text: str):
 
@@ -54,9 +57,9 @@ def generate_embedding(text: str):
 
     return embedding
 
-# ==========================
+# ==========================================================
 # Semantic Search
-# ==========================
+# ==========================================================
 
 def search_movies(query: str):
 
@@ -88,4 +91,73 @@ def search_movies(query: str):
 
     return list(
         embedded_movies.aggregate(pipeline)
+    )
+
+# ==========================================================
+# Memory Functions
+# ==========================================================
+
+def get_movie_plot(movie_title: str):
+
+    movie = embedded_movies.find_one(
+        {
+            "title": {
+                "$regex": f"^{movie_title}$",
+                "$options": "i"
+            }
+        },
+        {
+            "plot": 1,
+            "_id": 0
+        }
+    )
+
+    if not movie:
+        return ""
+
+    return movie.get(
+        "plot",
+        ""
+    )
+
+def save_preference(movie_name: str):
+
+    if not movie_name.strip():
+        return
+
+    plot = get_movie_plot(movie_name)
+
+    preferences_collection.update_one(
+        {
+            "user": "demo"
+        },
+        {
+            "$addToSet": {
+                "liked_movies": {
+                    "title": movie_name,
+                    "plot": plot
+                }
+            }
+        },
+        upsert=True
+    )
+
+def get_preferences():
+
+    doc = preferences_collection.find_one(
+        {"user": "demo"}
+    )
+
+    if not doc:
+        return []
+
+    return doc.get(
+        "liked_movies",
+        []
+    )
+
+def clear_preferences():
+
+    preferences_collection.delete_one(
+        {"user": "demo"}
     )
